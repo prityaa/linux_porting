@@ -1,0 +1,85 @@
+From fe51328fc972c779988547e50036773b730e0d04 Mon Sep 17 00:00:00 2001
+From: prityaa <pritammsutar660@gmail.com>
+Date: Fri, 9 Nov 2018 06:44:43 +0530
+Subject: [PATCH 2/2] local u-boot source support is patched
+
+Signed-off-by: prityaa <pritammsutar660@gmail.com>
+---
+ boot/uboot/Config.in | 14 ++++++++++++++
+ boot/uboot/uboot.mk  | 11 ++++++++++-
+ 2 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/boot/uboot/Config.in b/boot/uboot/Config.in
+index cef8ccd3cd..cf8233c903 100644
+--- a/boot/uboot/Config.in
++++ b/boot/uboot/Config.in
+@@ -57,12 +57,25 @@ config BR2_TARGET_UBOOT_CUSTOM_HG
+ config BR2_TARGET_UBOOT_CUSTOM_SVN
+ 	bool "Custom Subversion repository"
+ 
++config BR2_TARGET_UBOOT_CUSTOM_LOCAL
++	bool "Custom u-boot local directory"
++	help
++	  This option allows Buildroot to get the target U-Boot source
++	  code from a local directory.
++
+ endchoice
+ 
+ config BR2_TARGET_UBOOT_CUSTOM_VERSION_VALUE
+ 	string "U-Boot version"
+ 	depends on BR2_TARGET_UBOOT_CUSTOM_VERSION
+ 
++config BR2_TARGET_UBOOT_CUSTOM_LOCAL_PATH
++	string "Path to the local directory"
++	depends on BR2_TARGET_UBOOT_CUSTOM_LOCAL
++	help
++	  Path to the local directory with the target U-Boot source
++	  code.
++
+ config BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION
+ 	string "URL of custom U-Boot tarball"
+ 	depends on BR2_TARGET_UBOOT_CUSTOM_TARBALL
+@@ -73,6 +86,7 @@ config BR2_TARGET_UBOOT_CUSTOM_REPO_URL
+ 	string "URL of custom repository"
+ 	default BR2_TARGET_UBOOT_CUSTOM_GIT_REPO_URL \
+ 		if BR2_TARGET_UBOOT_CUSTOM_GIT_REPO_URL != ""  # legacy
++	default "custom"	if BR2_TARGET_UBOOT_CUSTOM_LOCAL
+ 
+ config BR2_TARGET_UBOOT_CUSTOM_REPO_VERSION
+ 	string "Custom repository version"
+diff --git a/boot/uboot/uboot.mk b/boot/uboot/uboot.mk
+index 24d3e4ef54..e8c7ceaf7a 100644
+--- a/boot/uboot/uboot.mk
++++ b/boot/uboot/uboot.mk
+@@ -12,11 +12,15 @@ UBOOT_LICENSE_FILES = Licenses/gpl-2.0.txt
+ 
+ UBOOT_INSTALL_IMAGES = YES
+ 
+-ifeq ($(UBOOT_VERSION),custom)
++#ifeq ($(UBOOT_VERSION),custom)
++ifeq ($(BR2_TARGET_UBOOT_CUSTOM_TARBALL),y)
+ # Handle custom U-Boot tarballs as specified by the configuration
+ UBOOT_TARBALL = $(call qstrip,$(BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION))
+ UBOOT_SITE = $(patsubst %/,%,$(dir $(UBOOT_TARBALL)))
+ UBOOT_SOURCE = $(notdir $(UBOOT_TARBALL))
++else ifeq ($(BR2_TARGET_UBOOT_CUSTOM_LOCAL),y)
++UBOOT_SITE = $(call qstrip,$(BR2_TARGET_UBOOT_CUSTOM_LOCAL_PATH))
++UBOOT_SITE_METHOD = local
+ else ifeq ($(BR2_TARGET_UBOOT_CUSTOM_GIT),y)
+ UBOOT_SITE = $(call qstrip,$(BR2_TARGET_UBOOT_CUSTOM_REPO_URL))
+ UBOOT_SITE_METHOD = git
+@@ -388,6 +392,11 @@ ifeq ($(call qstrip,$(BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION)),)
+ $(error No custom U-Boot tarball specified. Check your BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION setting)
+ endif # qstrip BR2_TARGET_UBOOT_CUSTOM_TARBALL_LOCATION
+ endif # BR2_TARGET_UBOOT_CUSTOM_TARBALL
++ifeq ($(BR2_TARGET_UBOOT_CUSTOM_LOCAL),y)
++ifeq ($(call qstrip,$(BR2_TARGET_UBOOT_CUSTOM_LOCAL_PATH)),)
++$(error No custom U-Boot local path specified. Check your BR2_TARGET_UBOOT_CUSTOM_LOCAL_PATH setting)
++endif # qstrip BR2_TARGET_UBOOT_CUSTOM_LOCAL_PATH
++endif # BR2_TARGET_UBOOT_CUSTOM_LOCAL
+ 
+ #
+ # Check Git/Mercurial repo options
+-- 
+2.19.1
+

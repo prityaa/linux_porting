@@ -1,0 +1,190 @@
+From 0e199e94f521d6c43b2eaaf9b07775fd0aa92c58 Mon Sep 17 00:00:00 2001
+From: prityaa <pritammsutar660@gmail.com>
+Date: Sun, 22 Apr 2018 17:18:50 +0530
+Subject: [PATCH 1/2] local kernel source path config is added
+
+Signed-off-by: prityaa <pritammsutar660@gmail.com>
+---
+ README_local_kernel_path | 85 ++++++++++++++++++++++++++++++++++++++++
+ configs/edison_defconfig | 21 ++++++++++
+ linux/Config.in          | 14 +++++++
+ linux/linux.mk           |  5 +++
+ 4 files changed, 125 insertions(+)
+ create mode 100644 README_local_kernel_path
+ create mode 100644 configs/edison_defconfig
+
+diff --git a/README_local_kernel_path b/README_local_kernel_path
+new file mode 100644
+index 0000000000..03b841c343
+--- /dev/null
++++ b/README_local_kernel_path
+@@ -0,0 +1,85 @@
++http://lists.busybox.net/pipermail/buildroot/2013-February/067010.html
++
++
++
++[Buildroot] [PATCH 1/1] Added local directory as soure of kernel code
++Rafal Fabich rafal.fabich at gmail.com
++Fri Feb 8 08:05:24 UTC 2013
++
++    Previous message: [Buildroot] [autobuild.buildroot.net] Build results for 2013-02-07
++        Next message: [Buildroot] [PATCH 1/1] Added local directory as soure of kernel code
++	    Messages sorted by: [ date ] [ thread ] [ subject ] [ author ]
++
++	    In 'menuconfig' user can choose a local directory as source of Linux kernel code.
++	    Useful during kernel drivers or modules development.
++
++	    Tested on three different development machines and different kernel sources.
++
++	    Signed-off-by: Rafal Fabich <rafal.fabich at gmail.com>
++	    ---
++	     linux/Config.in |   14 ++++++++++++++
++	      linux/linux.mk  |    3 +++
++	       2 files changed, 17 insertions(+)
++
++	diff --git a/linux/Config.in b/linux/Config.in
++	index 3c50acc..d88d920 100644
++	--- a/linux/Config.in
++	+++ b/linux/Config.in
++	@@ -52,6 +52,11 @@ config BR2_LINUX_KERNEL_CUSTOM_GIT
++	 	  This option allows Buildroot to get the Linux kernel source
++		   	  code from a Git repository.
++
++			  +config BR2_LINUX_KERNEL_CUSTOM_LOCAL
++			  +	bool "Local directory"
++			  +	help
++			  +	  This option allows Buildroot to get the Linux kernel source
++			  +	  code from a local directory.
++			   endchoice
++
++			    config BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE
++			    @@ -74,6 +79,13 @@ config BR2_LINUX_KERNEL_CUSTOM_GIT_VERSION
++			     	  Git revision to use in the format used by git rev-parse,
++				   	  E.G. a sha id, a tag, branch, ..
++
++					  +config BR2_LINUX_KERNEL_CUSTOM_LOCAL_PATH
++					  +	string "Path to the local directory"
++					  +	depends on BR2_LINUX_KERNEL_CUSTOM_LOCAL
++					  +	help
++					  +	  Path to the local directory with the Linux kernel source code.
++					  +
++					  +
++					   config BR2_LINUX_KERNEL_VERSION
++					    	string
++						 	default "3.7.6" if BR2_LINUX_KERNEL_3_7
++							@@ -81,6 +93,8 @@ config BR2_LINUX_KERNEL_VERSION
++							 	default BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE if BR2_LINUX_KERNEL_CUSTOM_VERSION
++								 	default "custom" if BR2_LINUX_KERNEL_CUSTOM_TARBALL
++									 	default $BR2_LINUX_KERNEL_CUSTOM_GIT_VERSION if BR2_LINUX_KERNEL_CUSTOM_GIT
++										+	default "local" if BR2_LINUX_KERNEL_CUSTOM_LOCAL
++										+
++
++										 #
++										 # Patch selection
++										diff --git a/linux/linux.mk b/linux/linux.mk
++										index 91a9f50..3f2d460 100644
++										--- a/linux/linux.mk
++										+++ b/linux/linux.mk
++										@@ -15,6 +15,9 @@ LINUX_SOURCE = $(notdir $(LINUX_TARBALL))
++	 else ifeq ($(BR2_LINUX_KERNEL_CUSTOM_GIT),y)
++	 LINUX_SITE = $(call qstrip,$(BR2_LINUX_KERNEL_CUSTOM_GIT_REPO_URL))
++	 LINUX_SITE_METHOD = git
++	 +else ifeq ($(BR2_LINUX_KERNEL_CUSTOM_LOCAL),y)
++	+LINUX_SITE = $(call qstrip,$(BR2_LINUX_KERNEL_CUSTOM_LOCAL_PATH))
++	+LINUX_SITE_METHOD = local
++	 else
++	  LINUX_SOURCE = linux-$(LINUX_VERSION).tar.bz2
++	   # In X.Y.Z, get X and Y. We replace dots and dashes by spaces in order
++	  --
++	  1.7.9.5
++
++	      Previous message: [Buildroot] [autobuild.buildroot.net] Build results for 2013-02-07
++	          Next message: [Buildroot] [PATCH 1/1] Added local directory as soure of kernel code
++		      Messages sorted by: [ date ] [ thread ] [ subject ] [ author ]
++
++		      More information about the buildroot mailing list
++
+diff --git a/configs/edison_defconfig b/configs/edison_defconfig
+new file mode 100644
+index 0000000000..e5fa85f058
+--- /dev/null
++++ b/configs/edison_defconfig
+@@ -0,0 +1,21 @@
++# Architecture
++BR2_i386=y
++BR2_x86_i586=y
++
++# Misc
++BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_MDEV=y
++BR2_TARGET_GENERIC_GETTY_PORT=«ttyS2»
++
++# Root FS
++# BR2_TARGET_ROOTFS_TAR is not set
++BR2_TARGET_ROOTFS_CPIO=y
++BR2_TARGET_ROOTFS_CPIO_BZIP2=y
++
++# Packages
++BR2_PACKAGE_KEXEC=y
++BR2_PACKAGE_KEXEC_ZLIB=y
++BR2_PACKAGE_LRZSZ=y
++BR2_PACKAGE_SCREEN=y
++BR2_PACKAGE_PCIUTILS=y
++BR2_PACKAGE_DMIDECODE=y
++BR2_PACKAGE_BUSYBOX_WATCHDOG=y
+diff --git a/linux/Config.in b/linux/Config.in
+index d9c5b62863..d7a951a5fd 100644
+--- a/linux/Config.in
++++ b/linux/Config.in
+@@ -87,12 +87,24 @@ config BR2_LINUX_KERNEL_CUSTOM_SVN
+ 	  This option allows Buildroot to get the Linux kernel source
+ 	  code from a Subversion repository.
+ 
++config BR2_LINUX_KERNEL_CUSTOM_LOCAL
++	bool "Local Kernel directory"
++	help
++	  This option allows Buildroot to get the Linux kernel source
++	  code from a local directory.
++
+ endchoice
+ 
+ config BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE
+ 	string "Kernel version"
+ 	depends on BR2_LINUX_KERNEL_CUSTOM_VERSION
+ 
++config BR2_LINUX_KERNEL_CUSTOM_LOCAL_PATH
++	string "Path to the local directory"
++	depends on BR2_LINUX_KERNEL_CUSTOM_LOCAL
++	help
++	  Path to the local directory with the Linux kernel source code.
++
+ config BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION
+ 	string "URL of custom kernel tarball"
+ 	depends on BR2_LINUX_KERNEL_CUSTOM_TARBALL
+@@ -123,6 +135,8 @@ config BR2_LINUX_KERNEL_VERSION
+ 	default "custom" if BR2_LINUX_KERNEL_CUSTOM_TARBALL
+ 	default BR2_LINUX_KERNEL_CUSTOM_REPO_VERSION \
+ 		if BR2_LINUX_KERNEL_CUSTOM_GIT || BR2_LINUX_KERNEL_CUSTOM_HG || BR2_LINUX_KERNEL_CUSTOM_SVN
++	default "local" if BR2_LINUX_KERNEL_CUSTOM_LOCAL
++
+ 
+ #
+ # Patch selection
+diff --git a/linux/linux.mk b/linux/linux.mk
+index 7609a15f23..359d700ecc 100644
+--- a/linux/linux.mk
++++ b/linux/linux.mk
+@@ -35,6 +35,11 @@ else ifneq ($(findstring -rc,$(LINUX_VERSION)),)
+ # Since 4.12-rc1, -rc kernels are generated from cgit. This also works for
+ # older -rc kernels.
+ LINUX_SITE = https://git.kernel.org/torvalds/t
++
++else ifeq ($(BR2_LINUX_KERNEL_CUSTOM_LOCAL),y)
++LINUX_SITE = $(call qstrip,$(BR2_LINUX_KERNEL_CUSTOM_LOCAL_PATH))
++LINUX_SITE_METHOD = local
++
+ else
+ LINUX_SOURCE = linux-$(LINUX_VERSION).tar.xz
+ # In X.Y.Z, get X and Y. We replace dots and dashes by spaces in order
+-- 
+2.19.1
+
