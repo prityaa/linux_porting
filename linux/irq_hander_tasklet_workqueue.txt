@@ -1,0 +1,23 @@
+sheduing workqueue in process context and mainly where bottom half can sleep
+	in read can not use spin_lock since preemptioin and irq are disabled.
+
+1 .
+pci_probe drivers/firewire/ohci.c
+	INIT_WORK(&ohci->bus_reset_work, bus_reset_work);
+
+2 .
+irq_handler	- drivers/firewire/ohci.c
+	 queue_work(selfid_workqueue, &ohci->bus_reset_work);
+
+
+3 . workqueue as bottom half is scheduled
+
+bus_reset_work -
+	find_and_insert_self_id	- drivers/firewire/ohci.c
+		initiated_reset
+			mutex_lock(&ohci->phy_reg_mutex)
+
+ohci_read_phy_reg - drivers/firewire/ohci.c
+	mutex_lock(&ohci->phy_reg_mutex);
+
+	=> calling mutex_lock w.r.t read process context
