@@ -1,5 +1,5 @@
-sheduing workqueue in process context and mainly where bottom half can sleep
-	in read can not use spin_lock since preemptioin and irq are disabled.
+sheduing workqueue in process context and mainly where bottom half can
+sleep in read can not use spin_lock since preemptioin and irq are disabled.
 
 1 .
 pci_probe drivers/firewire/ohci.c
@@ -21,3 +21,8 @@ ohci_read_phy_reg - drivers/firewire/ohci.c
 	mutex_lock(&ohci->phy_reg_mutex);
 
 	=> calling mutex_lock w.r.t read process context
+
+
+=================================================================
+in short tasklets are used to fill buffer of data.
+
