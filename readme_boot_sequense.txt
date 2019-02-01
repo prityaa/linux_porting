@@ -117,7 +117,9 @@ board_init_r():
 ======================================================================
 Linux boot sequense
 ======================================================================
-1 . arch/arm/boot/compressed/head.S
+
+1 . zImage decompression :
+    arch/arm/boot/compressed/head.S
 	- decompressed kernel start from either uImage or zImage
 	- kernel execution address
 
@@ -147,8 +149,76 @@ Linux boot sequense
 	 *   sp  = stack pointer
 	 *
 
+	 --------------------------------------------------------
+	arch/arm/boot/compressed/head.S: start
+	* First code executed, jumped to by the bootloader, at label "start" (108)
+    	* save contents of registers r1 and r2 in r7 and r8 to save off architecture ID and atags pointer passed in by bootloader (118)
+    	* execute arch-specific code (inserted at 146)
+        	- arch/arm/boot/compressed/head-xscale.S or other arch-specific code file
+        	- added to build in arch/arm/boot/compressed/Makefile
+        	- linked into head.S by linker section declaration:  .section “start”
+        	- flush cache, turn off cache and MMU
+    	* load registers with stored parameters (152)
+        	- sp = stack pointer for decompression code (152)
+	        - r4 = zreladdr = kernel entry point physical address
+    	* check if running at link address, and fix up global offset table if not (196)
+    	* zero decompression bss (205)
+    	* call cache_on to turn on cache (218)
+        	- defined at arch/arm/boot/compressed/head.S (320)
+        	- call call_cache_fn to turn on cache as appropriate for processor variant
+            		= defined at arch/arm/boot/compressed/head.S (505)
+            		= walk through proc_types list (530) until find corresponding processor
+            		= call cache-on function in list item corresponding to processor (511)
+                		for ARMv5tej core, cache_on function is __armv4_mmu_cache_on (417)
+                    		call setup_mmu to set up initial page tables since MMU must be on for cache to be on (419)
+                    turn on cache and MMU (426)
+    	* check to make sure won't overwrite image during decompression; assume not for this trace (232)
+    	* call decompress_kernel to decompress kernel to RAM (277)
+    	* branch to call_kernel (278)
+        	- call cache_clean_flush to flush cache contents to RAM (484)
+        	- call cache_off to turn cache off as expected by kernel initialization routines (485)
+        	- jump to start of kernel in RAM (489)
+            		= jump to address in r4 = zreladdr from previous load
+                		zreladdr = ZRELADDR = zreladdr-y
+                		zreladdr-y specified in arch/arm/mach-vx115/Makefile.boot
 
-2 . Kernel startup entry point.
+2 . ARM-specific kernel code :
+    arch/arm/kernel/head.S: stext (72)
+
+    	* call __lookup_processor_type (76)
+        	- defined in arch/arm/kernel/head-common.S (146)
+        	- search list of supported processor types __proc_info_begin (176)
+			= kernel may be built to support more than one processor type
+            		= list of proc_info_list structs
+                		defined in arch/arm/mm/proc-arm926.S (467) and other corresponding proc-*.S files
+                		linked into list by section declaration:  .section ".proc.info.init"
+            		= return pointer to proc_info_list struct corresponding to processor if found, or loop in error if not
+    	* call __lookup_machine_type (79)
+		- defined in arch/arm/kernel/head-common.S (194)
+		- search list of supported machines (boards)
+			= kernel may be built to support more than one board
+			= list of machine_desc structs
+                		machine_desc struct for boards defined in board-specific file vx115_vep.c
+	                	linked into list by section declaration that's part of MACHINE_DESC macro
+        	- return pointer to machine_desc struct corresponding to machine (board)
+    	* call __create_page_tables to set up initial MMU tables (82)
+    	* set lr to __enable_mmu, r13 to address of __switch_data (91, 93)
+        	- lr and r13 used for jumps after the following calls
+	        - __switch_data defined in arch/arm/kernel/head-common.S (15)
+	* call the __cpu_flush function pointer in the previously returned proc_info_list struct (94)
+		- offset is #PROCINFO_INITFUNC into struct
+        	- this function is __arm926_setup for the ARM 926EJ-S, defined in arch/arm/mm/proc-arm926.S (392)
+            		= initialize caches, writebuffer
+            		= jump to lr, previously set to address of __enable_mmu
+	* __enable_mmu (147)
+        	- set page table pointer (TTB) in MMU hardware so it knows where to start page-table walks (167)
+        	- enable MMU so running with virtual addresses (185)
+        	- jump to r13, previously set to address of __switch_data, whose first field is address of __mmap_switched
+            		= __switch_data defined in arch/arm/kernel/head-common.S (15)
+
+
+3 . Kernel startup entry point.
+    arch/arm/kernel/head-common.S: __mmap_switched
 
  This is normally called from the decompressor code.  The requirements
  * are: MMU = off, D-cache = off, I-cache = dont care, r0 = 0,
@@ -170,11 +240,17 @@ Linux boot sequense
 	- enable mmu
 	- __mmap_switched
 
+
 3 . __mmap_switched
 	start_kernel - arch/arm/kernel/head-common.S
 	first c	 function
 
-4 . start_kernel - init/main.c
+	- copy data segment to RAM (39)
+	- zero BSS (45)
+	- branch to start_kernel (55)
+
+4 . Processor-independent kernel code
+    start_kernel - init/main.c
 
 	- it loads 'vmlinux' ... i.e uncompressed kernel in .S file
 		OR
