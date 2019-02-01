@@ -1,0 +1,151 @@
+How USB bus number and device number been assigned?
+Ask Question
+
+13
+
+
+9
+When use lsusb I realize that the bus number and device number of a USB device can change from time to time. From what I understand, the bus number can be change on every reboot. The device number will change on every reconnect.
+My question is what algorithm the system used to get the bus number and device number? Especially the device number, is it monotonic? Will there ever be a case that: without rebooting the OS, one reconnected device is using another reconnected device's old bus number and device number?
+usb
+share
+improve this question
+asked Jul 20 '16 at 18:07
+
+Conan
+93117
+4
+One thing made me curious about your question, did you really see the BUS numbers change after a reboot? I was always confident that unless you change the hardware or update the BIOS the BUS numbers will not change. USB buses are simply hubs/controlers connected to PCI buses (in all cases i saw at least), and PCI bus info comes from BIOS. But I might be wrong, don't wanna make an answer and talk crap in it. – grochmal Jul 21 '16 at 16:56
+
+right, only when I have hardware change looks like. – Conan Jul 21 '16 at 20:15
+add a comment
+1 Answer
+active
+oldest
+votes
+
+14
+
+
+Note: This is a linux answer, other kernels will have a slightly different way to deal with this.
+Context
+It is difficult to talk about USB buses without talking about PCI buses. A CPU cannot talk to a USB bus, what happens is that the CPU talks to a PCI bus which has a USB controller connected to it (and a USB controller/hub is what lsusb calls a USB bus). PCI buses are numbered based on how far from the CPU they are, for example:
+    +-----+
+    | CPU |
+    +-----+
+       |              PCI Bus 0
+ ---+--+-----------------------------+
+    |                                |
++---+----+                      +----+---+
+| Bridge |                      | Bridge |
++---+----+                      +----+---+
+    |  PCI bus 1                     |  PCI bus 2
+  --+--------+               +-------+-------------+
+             |               |                     |
+       Disk Controller    USB Controller      Network Card
+         (Device 00)       (Device 00)         (Device 01)
+Looking in man lspci we see the following:
+   Slot   The  name of the slot where the device resides
+          ([domain:]bus:device.function).  This tag is
+          always the first in a record.
+Therefore we now know how to interpret PCI numbers. Next we will look at USB controllers connected to the PCI buses. The machine I am currently at has an interesting USB configuration so I'll use it as an example:
+$ lspci -tv
+-[0000:00]-+-00.0  Advanced Micro Devices, Inc. [AMD] RS780 Host Bridge
+           +-01.0-[01]----05.0  Advanced Micro Devices, Inc. [AMD/ATI] RS780M [Mobility Radeon HD 3200]
+           +-04.0-[02]----00.0  Qualcomm Atheros AR928X Wireless Network Adapter (PCI-Express)
+           +-05.0-[03]----00.0  Realtek Semiconductor Co., Ltd. RTL8111/8168/8411 PCI Express Gigabit Ethernet Controller
+           +-06.0-[04-06]--
+           +-11.0  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 SATA Controller [IDE mode]
+           +-12.0  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 USB OHCI0 Controller
+           +-12.1  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0 USB OHCI1 Controller
+           +-12.2  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 USB EHCI Controller
+           +-13.0  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 USB OHCI0 Controller
+           +-13.1  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0 USB OHCI1 Controller
+           +-13.2  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 USB EHCI Controller
+           +-14.0  Advanced Micro Devices, Inc. [AMD/ATI] SBx00 SMBus Controller
+           +-14.1  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 IDE Controller
+           +-14.2  Advanced Micro Devices, Inc. [AMD/ATI] SBx00 Azalia (Intel HDA)
+           +-14.3  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 LPC host controller
+           +-14.4-[07]--
+           +-14.5  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 USB OHCI2 Controller
+           +-18.0  Advanced Micro Devices, Inc. [AMD] Family 11h Processor HyperTransport Configuration
+           +-18.1  Advanced Micro Devices, Inc. [AMD] Family 11h Processor Address Map
+           +-18.2  Advanced Micro Devices, Inc. [AMD] Family 11h Processor DRAM Controller
+           +-18.3  Advanced Micro Devices, Inc. [AMD] Family 11h Processor Miscellaneous Control
+           \-18.4  Advanced Micro Devices, Inc. [AMD] Family 11h Processor Link Control
+Wait wait wait, what are all those pluses. At the top we have the domain and the PCI bus -[0000:00] (this machine has only one PCI bus). And then we have several devices connected to that bus. Let's see which ones are USB devices:
+$ lspci -tv | grep -i usb
+       +-12.0  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 USB OHCI0 Controller
+       +-12.1  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0 USB OHCI1 Controller
+       +-12.2  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 USB EHCI Controller
+       +-13.0  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 USB OHCI0 Controller
+       +-13.1  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0 USB OHCI1 Controller
+       +-13.2  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 USB EHCI Controller
+       +-14.5  Advanced Micro Devices, Inc. [AMD/ATI] SB7x0/SB8x0/SB9x0 USB OHCI2 Controller
+Good, now let us compare that against lsusb (I use sort just to make it easier to search the list later):
+$ lsusb | sort
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 002 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 002 Device 002: ID 174f:5a31 Syntek Sonix USB 2.0 Camera
+Bus 003 Device 001: ID 1d6b:0001 Linux Foundation 1.1 root hub
+Bus 003 Device 002: ID 046d:c019 Logitech, Inc. Optical Tilt Wheel Mouse
+Bus 004 Device 001: ID 1d6b:0001 Linux Foundation 1.1 root hub
+Bus 005 Device 001: ID 1d6b:0001 Linux Foundation 1.1 root hub
+Bus 006 Device 001: ID 1d6b:0001 Linux Foundation 1.1 root hub
+Bus 007 Device 001: ID 1d6b:0001 Linux Foundation 1.1 root hub
+Bus 007 Device 002: ID 0b05:1751 ASUSTek Computer, Inc. BT-253 Bluetooth Adapter
+Wait again. We have 7 USB devices according to lspci but 10 devices according to lsusb! lspci only lists the USB controllers, a controller can have more than one USB device attached to it. Let us explore /sys/bus/ to see how this happens.
+$ ls -l /sys/bus/usb/devices/
+... 1-0:1.0 -> ../../../devices/pci0000:00/0000:00:12.2/usb1/1-0:1.0
+... 2-0:1.0 -> ../../../devices/pci0000:00/0000:00:13.2/usb2/2-0:1.0
+... 2-1 -> ../../../devices/pci0000:00/0000:00:13.2/usb2/2-1
+... 2-1:1.0 -> ../../../devices/pci0000:00/0000:00:13.2/usb2/2-1/2-1:1.0
+... 2-1:1.1 -> ../../../devices/pci0000:00/0000:00:13.2/usb2/2-1/2-1:1.1
+... 3-0:1.0 -> ../../../devices/pci0000:00/0000:00:12.0/usb3/3-0:1.0
+... 3-1 -> ../../../devices/pci0000:00/0000:00:12.0/usb3/3-1
+... 3-1:1.0 -> ../../../devices/pci0000:00/0000:00:12.0/usb3/3-1/3-1:1.0
+... 4-0:1.0 -> ../../../devices/pci0000:00/0000:00:12.1/usb4/4-0:1.0
+... 5-0:1.0 -> ../../../devices/pci0000:00/0000:00:13.0/usb5/5-0:1.0
+... 6-0:1.0 -> ../../../devices/pci0000:00/0000:00:13.1/usb6/6-0:1.0
+... 7-0:1.0 -> ../../../devices/pci0000:00/0000:00:14.5/usb7/7-0:1.0
+... 7-1 -> ../../../devices/pci0000:00/0000:00:14.5/usb7/7-1
+... 7-1:1.0 -> ../../../devices/pci0000:00/0000:00:14.5/usb7/7-1/7-1:1.0
+... 7-1:1.1 -> ../../../devices/pci0000:00/0000:00:14.5/usb7/7-1/7-1:1.1
+... 7-1:1.2 -> ../../../devices/pci0000:00/0000:00:14.5/usb7/7-1/7-1:1.2
+... 7-1:1.3 -> ../../../devices/pci0000:00/0000:00:14.5/usb7/7-1/7-1:1.3
+... usb1 -> ../../../devices/pci0000:00/0000:00:12.2/usb1
+... usb2 -> ../../../devices/pci0000:00/0000:00:13.2/usb2
+... usb3 -> ../../../devices/pci0000:00/0000:00:12.0/usb3
+... usb4 -> ../../../devices/pci0000:00/0000:00:12.1/usb4
+... usb5 -> ../../../devices/pci0000:00/0000:00:13.0/usb5
+... usb6 -> ../../../devices/pci0000:00/0000:00:13.1/usb6
+... usb7 -> ../../../devices/pci0000:00/0000:00:14.5/usb7
+Now this is starting to make sense, we have 7 USB controllers which are plugged in the PCI bus as devices. For example, the USB bus 001 corresponds to the PCI device 0000:00:12.2 and USB bus 007 corresponds to the 0000:00:14.5 device.
+Device numbring
+The directories starting with the USB bus number (e.g. 7-1:1.2) are the actual devices connected to the USB controller. Just like a PCI bus can have several devices connected a USB controller (a hub) can have several USB devices connected to it.
+Device numbers are simply counters: first device connected gets a 1, the next gets a 2, and so on. But there is a little more: USB was designed to be plug-and-play therefore you can connect and disconnect devices. When you disconnect a USB device the device number will not be used by the kernel again for any other device on that USB controller. For example, if you connect and disconnect a pen drive and keep doing lsusb you will see the device number for your pen drive going up.
+Bus numbering
+If you have read the above with attention you might be wondering about one thing that I did not touch. The order of the PCI numbering does not correspond to the order in which the USB controllers were numbered! Let us see that again:
+USB  | PCI
+-----+----
+usb1 | 0000:00/0000:00:12.2
+usb2 | 0000:00/0000:00:13.2
+usb3 | 0000:00/0000:00:12.0
+usb4 | 0000:00/0000:00:12.1
+usb5 | 0000:00/0000:00:13.0
+usb6 | 0000:00/0000:00:13.1
+usb7 | 0000:00/0000:00:14.5
+The list is in order, but not quite. The first two USB controllers seem to be out of order. Yet, there is a reason why: If you look into lspci above you will see that those are EHCI USB (USB 2.0), whilst all other USB controllers are OHCI USB (USB 1.x).
+Therefore we can redraw this table as:
+USB  | PCI
+-----+----
+usb1 | 0000:00/0000:00:12.2
+usb2 | 0000:00/0000:00:13.2     USB 2.0
+-----+---------------------------------
+usb3 | 0000:00/0000:00:12.0     USB 1.x
+usb4 | 0000:00/0000:00:12.1
+usb5 | 0000:00/0000:00:13.0
+usb6 | 0000:00/0000:00:13.1
+usb7 | 0000:00/0000:00:14.5
+
+And the number assignment becomes clear.
