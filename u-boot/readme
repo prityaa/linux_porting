@@ -1,0 +1,60 @@
+porting u-boot :
+================
+1 . add defconfig file in
+	configs/new_board_defconfig
+		CONFIG_ARCH_NEW_BOARD=y
+
+	ex : configs/rpi_2_defconfig
+		CONFIG_ARCH_BCM283X=y
+
+2 . Added code in with makefile changed in uppper and upper layer of tree
+	arch/arm/mach-new_board/
+
+	include/         lowlevel_init.S  msg.c
+	init.c           Makefile         phys2bus.c
+	Kconfig          mbox.c           reset.c
+
+
+3 . It is relatively easy to port U­boot to a new board.
+    This explains its success. Look for an already supported board which is 
+    as close as possible to yours.
+    Create a new file in 
+    	include/configs/new_board.h 
+
+4 . add vendor and board in Kconfig
+	add board support in Makefiles and Kconfig on
+
+	arch/arm/mach-new_board/Kconfig
+
+	=>
+config SYS_BOARD
+        default "new_board"
+
+config SYS_VENDOR
+        default "new_vendor"
+
+config SYS_SOC
+        default "bcm283x"
+
+config SYS_CONFIG_NAME
+        default "rpi"
+
+5 . Then create support code in the "board" directory Example: 
+    have a look at board/new_vendor/new_board/
+    	new_board.c 
+	lowlevel_init.S
+	Makefile
+
+6 . include/asm­arm/mach­types.h:
+	#define MACH_TYPE_NEW_BOARD               620
+		(originating from Linux headers, should already be present)
+
+7 . CPU support implemented in the cpu/ directory ./arch/arm/cpu
+	arm11/          arm920t/        armv7m/         sa1100/
+	arm1136/        arm926ejs/      armv8/          u-boot.lds
+	arm1176/        arm946es/       Makefile        u-boot-spl.lds
+	arm720t/        armv7/
+
+8 . Device drivers implemented in drivers/ A lot of reuse from Linux drivers!
+
+9 . Headers implemented in include/ and in include/asm­<arch>/ (mostly Linux headers) 
