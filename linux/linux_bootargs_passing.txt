@@ -1,0 +1,40 @@
+====================================================================
+Read commnad line in kernel using Atags or DTB
+====================================================================
+
+====================================================================
+
+1 . tags are read from ATAG_CMDLINE (hard coded) which was passed by u-boot at
+        this location. and kernel reads tag->u.cmdline.cmdline
+        from struct tag
+        __tagtable(ATAG_CMDLINE, parse_tag_cmdline);
+        in      =>arch/arm/kernel/atags_parse.c
+
+                =>arch/arm/include/uapi/asm/setup.h:124:
+                #define ATAG_CMDLINE    0x54410009
+
+2 .     parse_tag calls t->parse which is function
+        callback for __tagtable
+        in      => arch/arm/kernel/atags_parse.c
+
+3 .     parse_tags calls parse_tag
+        in      => arch/arm/kernel/atags_parse.c
+
+4 .     setup_machine_tags calls parse_tags
+        in      => arch/arm/kernel/atags_parse.c
+
+5 .     setup_arch calls setup_machine_tags when it finds
+        bootargs in DTB is null.
+        in      => arch/arm/kernel/setup.c
+
+6 .     NOTE : __atags_pointer  is set from r2 register
+        .long   processor_id                    @ r0
+        .long   __machine_arch_type             @ r1
+        .long   __atags_pointer                 @ r2
+
+        in      => arch/arm/kernel/head-common.S
+
+7 .     start_kernel calls setup_arch(&command_line);
+        in      => init/main.c
+
+https://stackoverflow.com/questions/17661550/how-to-add-customised-atag-variable-in-u-boot-and-linux-kernel
