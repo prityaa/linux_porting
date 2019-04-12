@@ -1,0 +1,161 @@
+1 . add in dts inside amba
+
+	amba: amba {
+                compatible = "simple-bus";
+                #address-cells = <1>;
+                #size-cells = <1>;
+                interrupt-parent = <&intc>;
+                ranges;
+
+		usb0: usb@e0002000 {
+                        compatible = "xlnx,zynq-usb-2.20a", "chipidea,usb2";
+                        status = "disabled";
+                        clocks = <&clkc 28>;
+                        interrupt-parent = <&intc>;
+                        interrupts = <0 21 4>;
+                        reg = <0xe0002000 0x1000>;
+                        phy_type = "ulpi";
+                };
+	}
+
+
+
+2 . chipidea,usb2 is compatible with
+	drivers/usb/chipidea/ci_hdrc_usb2.c
+
+	static const struct of_device_id ci_hdrc_usb2_of_match[] = {
+		{ .compatible = "chipidea,usb2"},
+		{ .compatible = "xlnx,zynq-usb-2.20a", .data = &ci_zynq_pdata},
+		{ }
+	};
+
+	static struct platform_driver ci_hdrc_usb2_driver = {
+		.probe  = ci_hdrc_usb2_probe,
+		.remove = ci_hdrc_usb2_remove,
+		.driver = {
+			.name           = "chipidea-usb2",
+			.of_match_table = of_match_ptr(ci_hdrc_usb2_of_match),
+		},
+	};
+
+3 . in probe it add device in platform device list
+
+	platform_device_alloc
+		platform_device_alloc("ci_hdrc", id);
+
+	platform_device_add_resources
+	platform_device_add_data
+	platform_device_add
+
+4 . driver is probed, ci_hdrc_probe
+	drivers/usb/chipidea/core.c
+
+	static struct platform_driver ci_hdrc_driver = {
+		.probe  = ci_hdrc_probe,
+		.remove = ci_hdrc_remove,
+		.driver = {
+			.name   = "ci_hdrc",
+			.pm     = &ci_pm_ops,
+		},
+	};
+
+5 .  ci_hdrc_probe
+	platform_get_resource
+	devm_kzalloc
+	spin_lock_init
+	hw_device_init
+	ci_ulpi_init
+	devm_usb_get_phy
+	ci_usb_phy_init
+	platform_get_irq - ci_irq
+
+	if dr mode is OTG OR gadget
+		ci_hdrc_gadget_init
+
+		ci_hdrc_otg_init
+
+	devm_request_irq
+	ci_extcon_register
+
+	supports_runtime_pm
+
+	sysfs_create_group
+
+6 . ci_hdrc_gadget_init - drivers/usb/chipidea/udc.c
+	devm_kzalloc
+
+	rdrv->start     = udc_id_switch_for_device;
+        rdrv->stop      = udc_id_switch_for_host;
+        rdrv->irq       = udc_irq;
+        rdrv->name      = "gadget";
+
+	udc_start
+
+7 . ci_irq calls  rdrv->irq (udc_irq) in case of i/r comes
+
+
+	 /* Handle device/host interrupt */
+        if (ci->role != CI_ROLE_END)
+                ret = ci_role(ci)->irq(ci);
+
+8 . udc_irq calls "completion" callback of the driver
+	- drivers/usb/chipidea/udc.c
+
+	hw_test_and_clear_intr_active
+		test & clear active interrupts (execute without interruption)
+	isr_reset_handler
+
+	isr_tr_complete_handler
+		isr_tr_complete_low
+			usb_gadget_giveback_request
+=>				req->complete(ep, req);
+				gadget function's complete callback get called.
+
+		/* Only handle setup packet below */
+		isr_setup_packet_handler
+
+9 .
+
+ */ drivers/usb/chipidea/udc.c */
+static const struct usb_ep_ops usb_ep_ops = {
+        .enable        = ep_enable,
+        .disable       = ep_disable,
+        .alloc_request = ep_alloc_request,
+        .free_request  = ep_free_request,
+        .queue         = ep_queue,
+        .dequeue       = ep_dequeue,
+        .set_halt      = ep_set_halt,
+        .set_wedge     = ep_set_wedge,
+        .fifo_flush    = ep_fifo_flush,
+};
+
+
+udc_start starts Usb gadget role
+/**
+ * Device operations part of the API to the USB controller hardware,
+ * which don't involve endpoints (or i/o)
+ * Check  "usb_gadget.h" for details
+ */
+static const struct usb_gadget_ops usb_gadget_ops = {
+        .vbus_session   = ci_udc_vbus_session,
+        .wakeup         = ci_udc_wakeup,
+        .set_selfpowered        = ci_udc_selfpowered,
+        .pullup         = ci_udc_pullup,
+        .vbus_draw      = ci_udc_vbus_draw,
+        .udc_start      = ci_udc_start,
+        .udc_stop       = ci_udc_stop,
+};
+
+
+udc_start : drivers/usb/chipidea/udc.c
+
+	ci->gadget.ops          = &usb_gadget_ops;
+        ci->gadget.speed        = USB_SPEED_UNKNOWN;
+        ci->gadget.max_speed    = USB_SPEED_HIGH;
+        ci->gadget.name         = ci->platdata->name;
+        ci->gadget.otg_caps     = otg_caps;
+
+	init_eps
+	usb_add_gadget_udc
+
+
