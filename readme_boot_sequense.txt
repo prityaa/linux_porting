@@ -407,14 +407,15 @@ Early booting on RPI
 	therefore most of the boot components are actually run on the GPU code, not the CPU.
 	At this point the SDRAM is disabled.
 
+		FSBL is used to mount the FAT32 boot partition on the SD card so that
+	the second stage bootloader can be accessed. FSBL is programmed into the
+	SoC itself during manufacture of the RPi and cannot be reprogrammed by a user
+
 	- The GPU starts executing the first stage bootloader, which is
 	stored in ROM on the SoC. The first stage bootloader reads
 	the SD card, and loads the second stage bootloader (bootcode.bin)
 	into the L2 cache, and runs it.
 
-		FSBL is used to mount the FAT32 boot partition on the SD card so that
-	the second stage bootloader can be accessed. FSBL is programmed into the
-	SoC itself during manufacture of the RPi and cannot be reprogrammed by a use
 
 	- bootcode.bin enables SDRAM, and reads the third stage bootloader
 	(loader.bin) from the SD card into RAM, and runs it.
@@ -439,6 +440,213 @@ Early booting on RPI
 	- Everything is run on the GPU until kernel.img is loaded on the ARM.
 
 	- start kernel running.
+
+=================
+Early bootup OMAP
+=================
+	There are several stages of bootloaders that perform different levels
+	of initialization on an OMAP platform, in order to eventually load and
+	run the filesystem. This figure shows the booting sequence of the ROM code,
+	x-loader, u-boot, and kernel, with each stage performing enough
+	configuration in order to load and execute the next.
+
+(1) components :
+----------------
+
+	1 . when sys is first booted, CPU invokes reset vector to start the code
+	at known location in ROM.
+
+	=> ROM CODE :
+		- performes minimal clocks, mem, peripheral configs
+		- serches booting devices for valid booting image
+		- load x-loader into sram (L1, L2, L3 cashes) and execute it.
+
+	2 . X-loader :
+		- setup pin configs
+		- init clock and mem SDRAM
+		- loads u-boot into SDRAM and execute it
+
+	3 . u-boot :
+		- performs some more platform inits .
+		- setup boot arguments
+		- passes controll to kernel
+
+	4 . kernel :
+		- decompressed kernel into SDram
+		- setup peripheral like LCD, USB, SD, i2c, Spi,
+		- mount linx fs that contains user libs and init / sysmd
+
+(2)OMAP Boot Sequence :
+---------------------
+	1 . SYSBOOT Pins
+
+		The internal ROM Code can attempt to boot from several different
+peripheral and memory devices, including, but not limited to: serial (UART3),
+SD Card, eMMC, NAND, and USB. The order in which these devices are searched
+for a valid first-stage booting image (x-loader) is determine by a set of GPIO
+configuration pins referred to as SYSBOOT. The TRM includes a table that shows
+the booting device list that each combination of the SYSBOOT pins refers to.
+
+	The SYSBOOT value can be read from physical address 0x480022f0,
+	either using JTAG, or if you have linux running, use devmem2:
+
+	=>
+	# devmem2 0x480022f0 b
+	/dev/mem opened.
+	Memory mapped at address 0x40020000.
+	Value at address 0x480022F0 (0x400202f0): 0x2F
+
+	2 . First Stage Boot (x-loader) :
+		The x-loader is a small first stage bootloader derived from
+the u-boot base code. It is loaded into the internal static RAM by the OMAP
+ROM code. Due to the small size of the internal static RAM, the x-loader is
+stripped down to the essentials. The x-loader configures the pin muxing, clocks,
+DDR, and serial console, so that it can access and load the second stage bootloader
+(u-boot) into the DDR. This figure shows the code flow in the x-loader, beginning in start.S
+
+		For example, the SYSBOOT pins could be set such that booting
+device list consists of 1) serial (UART3), 2) SD card (MMC1), and 3) NAND flash.
+In this case, the ROM code would first look for a valid x-loader over
+the serial port, then in the SD card, then in the NAND flash. Whenever
+it finds a valid x-loader, it proceeds with execution of that binary.
+
+     PC			 _______________		 _______________
+ __________		|		|		| NAND FLASH 	|
+|   FSBL   |	Serial	|   Rom code 	|      NAND	|    FSBL	|
+|  Serial  |----------->| Internal SRam	|-------------->|_______________|
+|__________|	Loader	|_______________|	Loader	|_______________|
+				|			|_______________|
+				|			|_______________|
+			    SD	| Loader		|_______________|
+				|
+			 _______v_______
+			|    FAT32	|
+			|   SD card	|
+			|  FSBL (MLO)	|
+			|_______________|
+
+	A Serial Boot
+		For serial boot, a simple ID is written out of the serial port.
+	If the host responds correctly within a short window of time,
+	the ROM will read from the serial port and transfer the data to the internal SRAM.
+	Control is passed to the start of SDRAM if no errors are detected.
+	UART3 is the only uart for which the ROM will attempt to load from.
+
+
+	B SD Card Boot
+		If MMC is included in the booting device list, the ROM looks for
+	an SD Card on the first MMC controller. If a card is found, the ROM then
+	looks for the first FAT32 partition within the partition table.
+	Once the partition is found, the root directory is scanned for a special
+	signed file called "MLO" (which is the x-loader binary with a header
+	containing the memory location to load the file to and the size of the file).
+	Assuming all is well with the file, it is transfered into the internal
+	SRAM and control is passed to it. Both MMC1 and MMC2 can be used for booting.
+
+	C NAND / eMMC Boot
+		If NAND is included in the booting device list, the ROM attempts
+	to load the first sector of NAND. If the sector is bad, corrupt, or blank,
+	the ROM will try the next sector (up to 4) before exiting. Once a good
+	sector is found, the ROM transfers the contents to SRAM and transfers
+	control to it. (The same steps are performed for eMMC if eMMC is included
+	in the booting device list instead of NAND.)
+
+	3 . Second Stage Boot (u-boot) :
+
+		The u-boot is a second stage bootloader that is loaded by the x-loader
+into DDR. It comes from Das U-Boot. The u-boot can perform CPU dependent
+and board dependent initialization and configuration not done in the x-loader.
+The u-boot also includes fastboot functionality for partitioning and flashing the eMMC.
+The u-boot runs on the Master CPU (CPU ID 0), which is responsible for the
+initialization and booting; at the same time, the Slave CPU (CPU ID 1) is held
+in the “wait for event” state. This figure shows the code flow in the u-boot, beginning in start.S.
+
+		It is the job of the x-loader to transfer the 2nd stage loader
+into main memory, which we call the u-boot. Typically both the x-loader and
+u-boot come from the same storage medium. For example, typically if the x-loader
+is transferred via USB, the u-boot will also be transferred via USB, and if
+the x-loader is transferred via SD card, the u-boot will also be transferred
+via SD card. However, this is not required. For example, you could flash the serial
+x-loader into the NAND. The ROM code will load the x-loader from NAND and transfer
+control to the x-loader, which will wait for the u-boot to be downloaded from the serial port.
+
+ _______________________
+|			|
+|    Second stage bl	|					 _______
+| Serial(u-boot) kermit	|			       		|	|
+| SD FAT32 (u-boot.bin) |------------->	X-LOADER -------------->| SDRAM	|
+| NAND  u-boot 		|					|_______|
+|_______________________|
+
+	A Serial Boot
+		In the case of loading both the u-boot over the serial port,
+	the x-loader waits for the host to initiate a kermit connection to
+	reliably transfer large files into main memory. Once the file transfer
+	is completed successfully, control is transfered.
+
+	B SD Card Boot
+		In the case of loading the u-boot via the SD card, the SD card
+	x-loader looks for a FAT32 partition on the first MMC controller and
+	scans the top level directory for a file named "u-boot.bin".
+	It then transfers the file into main memory and transfers control to it.
+
+
+	C NAND / eMMC Boot
+		In the case of a u-boot stored in NAND, the x-loader expects
+	the u-boot to be located at the 5th sector (offset 0x00800000).
+	It transfers the image from NAND into main memory and transfers control
+	to it. In the case of a u-boot stored in eMMC, the x-loader expects
+	the u-boot to be located at the offset 0x200.
+
+===============
+L1 vs L2 Cache :
+===============
+
+	Cache memory is a special memory used by the CPU (Central Processing Unit)
+of a computer for the purpose of decreasing the average time required to access memory.
+Cache memory is a relatively smaller and also a faster memory, which stores most
+frequently accessed data of the main memory. When there is request for a memory read,
+cache memory is checked to see whether that data exists in cache memory.
+If that data is in the cache memory, then there is no need to access the main memory
+(which takes longer time to be accessed), therefore making the average memory access
+time smaller. Typically, there are separate caches for data and instructions.
+Data cache is typically set up in a hierarchy of cache levels (sometimes called
+multilevel caches). L1 (Level 1) and L2 (Level 2) are the top most caches in this
+hierarchy of caches. L1 is the closest cache to the main memory and is the cache
+that is checked first. L2 cache is the next in line and is the second closest
+to main memory. L1 and L2 vary in access speeds, location, size and cost.
+
+	L1 Cache :
+		L1 cache (also known as primary cache or Level 1 cache) is the
+	top most cache in the hierarchy of cache levels of a CPU.
+	It is the fastest cache in the hierarchy. It has a smaller size and a smaller
+	delay (zero wait-state) because it is usually built in to the chip.
+	SRAM (Static Random Access Memory) is used for the implementation of L1.
+
+	L2 Cache :
+		L2 cache (also known as secondary cache or Level 2 cache) is the
+	cache that is next to L1 in the cache hierarchy. L2 is usually accessed only
+	if the data looking for is not found in L1. L2 is usually used to bridge the
+	gap between the performance of the processor and the memory.
+	L2 is typically implemented using a DRAM (Dynamic Random Access Memory).
+	Most times, L2 is soldered on to the motherboard very close to the chip
+	(but not on the chip itself), but some processors like Pentium Pro
+	deviated from this standard.
+
+
+	What is the difference between L1 and L2 Cache?
+
+		Although both L1 and L2 are cache memories they have their key
+	differences. L1 and L2 are the first and second cache in the hierarchy
+	of cache levels. L1 has a smaller memory capacity than L2. Also,
+	L1 can be accessed faster than L2. L2 is accessed only if the requested
+	data in not found in L1. L1 is usually in-built to the chip,
+	while L2 is soldered on the motherboard very close to the chip.
+	Therefore, L1 has a very little delay compared to L2. Because L1 is implemented
+	using SRAM and L2 is implemented using DRAM, L1 does not need refreshing,
+	while L2 needs to be refreshed. If the caches are strictly inclusive,
+	all data in L1 can be found in L2 as well. However, if the caches are
+	exclusive, same data will not be available in both L1 and L2.
 
 
 reference :
