@@ -384,3 +384,23 @@ branch to start_kernel (55)
 
 Processor-independent kernel code
 init/main.c: start_kernel (456)
+
+
+reference :
+rpi : https://raspberrypi.stackexchange.com/questions/10442/what-is-the-boot-sequence
+      https://elinux.org/RPi_Software#Overview
+omap : http://omappedia.org/wiki/Bootloader_Project
+x86 : https://linoxide.com/booting/boot-process-of-linux-in-detail/
+
+
+https://stackoverflow.com/questions/34805383/why-is-mlo-needed-in-boot-step
+https://www.allinonescript.com/questions/22455153/what-is-the-need-of-second-stage-boot-loader-why-different-bootloaders-like-fi
+(must) http://omappedia.org/wiki/Bootloader_Project
+https://stackoverflow.com/questions/22455153/what-is-the-need-of-second-stage-boot-loader-why-different-bootloaders-like-fi
+https://superuser.com/questions/515126/boot-loader-of-linux
+https://superuser.com/questions/707050/primary-and-secondary-boot-loaders
+https://linoxide.com/booting/boot-process-of-linux-in-detail/
+https://stackoverflow.com/questions/15548004/why-do-we-need-a-bootloader-in-an-embedded-device
+
+
+
