@@ -386,6 +386,61 @@ Processor-independent kernel code
 init/main.c: start_kernel (456)
 
 
+===============
+Early booting on RPI
+===============
+
+1 . components :
+---------------
+	- GPU core
+	- fsbl stores in ROM on SOC
+	- second stage boot loader (bootcode.bin + loader.bin)
+	- start.elf
+	- config.txt, kernel.img
+	- sysmd / init
+
+2 . process :
+------------
+
+	- When the Raspberry Pi is first turned on, the ARM core is off,
+	and a small RISC core on the GPU is responsible for booting the SoC,
+	therefore most of the boot components are actually run on the GPU code, not the CPU.
+	At this point the SDRAM is disabled.
+
+	- The GPU starts executing the first stage bootloader, which is
+	stored in ROM on the SoC. The first stage bootloader reads
+	the SD card, and loads the second stage bootloader (bootcode.bin)
+	into the L2 cache, and runs it.
+
+		FSBL is used to mount the FAT32 boot partition on the SD card so that
+	the second stage bootloader can be accessed. FSBL is programmed into the
+	SoC itself during manufacture of the RPi and cannot be reprogrammed by a use
+
+	- bootcode.bin enables SDRAM, and reads the third stage bootloader
+	(loader.bin) from the SD card into RAM, and runs it.
+		This is used to retrieve the GPU firmware from the SD card,
+	program the firmware, then start the GPU.
+
+	- loader.bin reads the GPU firmware (start.elf). loader.bin doesn't do much.
+	It can handle elf files, and so is needed to load start.elf at the
+	top of memory (ARM uses SDRAM from address zero).
+
+	- start.elf Once is loaded, this allows the GPU to start up the CPU.
+	An additional file, fixup.dat, is used to configure the SDRAM partition
+	between the GPU and the CPU. At this point, the CPU is release from
+	reset and execution is transferred over.
+
+		start.elf reads config.txt, cmdline.txt and kernel.img and it loads kernel.img.
+	It then also reads config.txt,cmdline.txt and bcm2835.dtb
+	If the dtb file exists, it is loaded at 0×100 & kernel @ 0×8000
+	If disable_commandline_tags is set it loads kernel @ 0×0 Otherwise
+	it loads kernel @ 0×8000 and put ATAGS at 0×100
+
+	- Everything is run on the GPU until kernel.img is loaded on the ARM.
+
+	- start kernel running.
+
+
 reference :
 rpi : https://raspberrypi.stackexchange.com/questions/10442/what-is-the-boot-sequence
       https://elinux.org/RPi_Software#Overview
