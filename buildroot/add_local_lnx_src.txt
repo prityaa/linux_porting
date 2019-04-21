@@ -1,0 +1,34 @@
+1 . add one of the patch added in present directory
+
+2 . There is currently no way to set the path to the kernel source from the Buildroot configuration.
+
+You have two options to do it.
+
+    2.1 Create a file local.mk in the directory that contains .config (i.e. the Buildroot source directory if you don't use the O= option, or the output directory if you do use O=). In local.mk, add a line with LINUX_OVERRIDE_SRCDIR= and fill in the path to the kernel source (either an absolute path, or a path relative to the Buildroot source directory).
+
+    2.2 Create a tarball of the kernel source. In the Buildroot configuration menu, under "Kernel", set "Kernel version" to "Custom tarball". Then set "URL of custom kernel tarball" to the file-URL, so file:///path/to/the/tarball.tar.gz.
+
+    => can pass linux directory as well
+
+e.g
+				       [*] Linux Kernel                                                                                         │ │
+  │ │                                        Kernel version (Custom tarball)  --->                                                              │ │
+  │ │                                  (file:///home/prityaa/documents/workspace/boards/rpi/rpi_b/linux/kernel/linux_backup) URL of custom kerne│ │
+  │ │                                  ()    Custom kernel patches                                                                              │ │
+  │ │                                        Kernel configuration (Using a custom (def)config file)  --->                                       │ │
+  │ │                                  (/home/prityaa/documents/workspace/boards/rpi/rpi_b/linux/kernel/linux_backup/.config) Configuration file│ │
+  │ │                                  ()    Additional configuration fragment files                                                            │ │
+  │ │                                  ()    Custom boot logo file path                                                                         │ │
+  │ │                                        Kernel binary format (zImage)  --->                                                                │ │
+  │ │                                        Kernel compression format (gzip compression)  --->                                                 │ │
+  │ │                                  [*]   Build a Device Tree Blob (DTB)                                                                     │ │
+  │ │                                  (bcm2709-rpi-2-b) In-tree Device Tree Source file names                                                  │ │
+  │ │                                  ()      Out-of-tree Device Tree Source file paths                                                        │ │
+  │ │                                  [ ]     Build Device Tree with overlay support                                                           │ │
+  │ │                                  [ ]   Install kernel image to /boot in target                                                            │ │
+  │ │                                  [*]   Needs host OpenSSL                                                                                 │ │
+  │ │                                  [ ]   Needs host libelf                                                                                  │ │
+  │ │                                        Linux Kernel Extensions  --->                                                                      │ │
+  │ │                                        Linux Kernel Tools  --->
+
+Obviously, in either case, you need to enable the kernel build ("Linux kernel" option in the Kernel menu) and also set the other kernel options (kernel config, device tree, etc.).
