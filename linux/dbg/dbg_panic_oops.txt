@@ -1,0 +1,83 @@
+When invalid pointer us dereferenced, the paging mechnism fails to
+map pointer to phy addr and processor signals a page fault to OS.
+if the addr is invalid, kernel is not able to "page in" the missing addr.
+it generates an oops if this happens while processor is supervison mode.
+
+e.g 1
+-------------------------
+
+Consider the following linux kernel dump stack trace,
+you can trigger a panic from the kernel source code by calling panic("debugging a linux kernel panic");:
+
+[<001360ac>] (unwind_backtrace+0x0/0xf8) from [<00147b7c>] (warn_slowpath_common+0x50/0x60)
+[<00147b7c>] (warn_slowpath_common+0x50/0x60) from [<00147c40>] (warn_slowpath_null+0x1c/0x24)
+[<00147c40>] (warn_slowpath_null+0x1c/0x24) from [<0014de44>] (local_bh_enable_ip+0xa0/0xac)
+[<0014de44>] (local_bh_enable_ip+0xa0/0xac) from [<0019594c>] (bdi_register+0xec/0x150)
+
+    In unwind_backtrace+0x0/0xf8 what the +0x0/0xf8 stands for?
+    How can I see the C code of unwind_backtrace+0x0/0xf8?
+    How to interpret the panic's content?
+
+=>
+1.1
+	It's just an ordinary backtrace, those functions are called in reverse order
+	(first one called was called by the previous one and so on):
+
+	unwind_backtrace+0x0/0xf8
+	warn_slowpath_common+0x50/0x60
+	warn_slowpath_null+0x1c/0x24
+	ocal_bh_enable_ip+0xa0/0xac
+	bdi_register+0xec/0x150
+
+	The bdi_register+0xec/0x150 is the symbol + the offset/length
+	there's more information about that in Understanding a Kernel Oops
+	and how you can debug a kernel oops. Also there's this excellent
+	tutorial on Debugging the Kernel
+
+	reference 1 : https://people.netfilter.org/hawk/presentations/debugging_conf2013/debug2013_kernel_panic_decode_JesperBrouer.pdf
+	reference 2 : https://unix.stackexchange.com/questions/420091/how-to-debug-what-driver-causes-a-kernel-panic
+
+	Note: as suggested below by Eugene, you may want to try
+	addr2line first, it still needs an image with debugging
+	symbols though, for example
+
+addr2line -e vmlinux_with_debug_info 0019594c(+offset)
+
+1.2
+	Here are 2 alternatives for addr2line. Assuming you
+	have the proper target's toolchain you can do one of the following:
+
+Use objdump:
+    locate your vmlinux or the .ko file under the kernel root directory,
+    then disassemble the object file :
+
+    objdump -dS vmlinux > /tmp/kernel.s
+
+    Open the generated assembly file, /tmp/kernel.s. with a
+    text editor such as vim. Go to unwind_backtrace+0x0/0xf8, i.e.
+    search for the address of unwind_backtrace + the offset.
+    Finally, you have located the problematic part in your source code.
+
+Use gdb:
+    IMO, an even more elegant option is to use the one and only gdb.
+    Assuming you have the suitable toolchain on your host machine:
+
+    Run gdb <path-to-vmlinux>.
+    Execute in gdb's prompt: list *(unwind_backtrace+0x10).
+
+For additional information you may checkout the following:
+
+https://wiki.ubuntu.com/Kernel/KernelDebuggingTricks
+https://elinux.org/Debugging_The_Linux_Kernel_Using_Gdb
+
+2
+----------------------------
+
+
+
+https://en.wikipedia.org/wiki/Linux_kernel_oops
+https://stackoverflow.com/questions/12723641/is-it-possible-to-read-the-symbol-table-of-a-vmlinux-file
+https://en.wikipedia.org/wiki/System.map
+main : https://stackoverflow.com/questions/13468286/how-to-read-understand-analyze-and-debug-a-linux-kernel-panic
+
+
