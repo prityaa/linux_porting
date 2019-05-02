@@ -1,0 +1,32 @@
+
+#define arch_initcall_sync(fn)          __define_initcall(fn, 3s)	-include/linux/init.h
+arch_initcall_sync(of_platform_default_populate_init);		-drivers/of/platform.c
+	of_platform_device_create
+		of_platform_default_populate				-	
+			of_platform_populate
+				for_each_child_of_node {
+					of_platform_bus_create
+
+				}
+					
+	
+of_platform_device_create
+	of_platform_device_create_pdata
+		of_device_add
+			device_add
+				kobject_add			-drivers/base/core.c
+				device_platform_notify
+				device_create_file
+				device_add_class_symlinks
+				device_add_attrs
+				bus_add_device
+				dpm_sysfs_add
+				device_create_file
+				device_create_sys_dev_entry
+
+				bus_probe_device
+			
+
+			add node to list 
+bus_add_device
+	klist_add_tail(&dev->p->knode_bus, &bus->p->klist_devices);
