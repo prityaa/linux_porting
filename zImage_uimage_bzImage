@@ -1,0 +1,686 @@
+Linux kernel is a monolithic kernel . While building kernel image we can choose
+multiple format for Kernel images.Usually beginners will wonder  because of
+these various names and format .The kernel file, in Ubuntu, is stored in your
+/boot folder and is called vmlinuz-version . The name vmlinuz comes from the
+unix world where they used to call their kernels simply “unix” back in the 60’s
+so Linux started calling their kernel “linux” when it was first developed
+in the 90’s.When virtual memory was developed for easier multitasking abilities,
+“vm” was put at the front of the file to show that the kernel supports virtual
+memory. For a while the Linux kernel was called vmlinux, but the kernel grew
+too large to fit in the available boot memory so the kernel image was
+compressed and the ending x was changed to a z to show it was compressed with
+zlib compression. This same compression isn’t always used, often replaced with
+LZMA or BZIP2, and some kernels are simply called zImage.kernelcompression
+
+Here we can have a brief overview on various kernel images
+
+    Image: The generic Linux kernel binary image file.
+
+    vmlinux: This is the Linux kernel in an statically linked executable file
+    	format. Generally, you don’t have to worry about this file, it’s just
+	a intermediate step in the boot procedure.The raw vmlinux file may be
+	useful for debugging purposes.vmlinux.bin:The same as vmlinux,
+	but in a bootable raw binary file format. All symbols and relocation
+	information is discarded. Generated from vmlinux by
+			objcopy -O binary vmlinux vmlinux.bin.
+
+    vmlinuz: The vmlinux file usually gets compressed with zlib.
+	Since 2.6.30 LZMA and bzip2 are also available. By adding further
+	boot and decompression capabilities to vmlinuz, the image can be used
+	to boot a system with the vmlinux kernel. The compression of vmlinux
+	can occur with zImage or bzImage.The function decompress_kernel()
+	handles the decompression of vmlinuz at bootup, a message indicates this:
+
+    Decompressing Linux... done
+    Booting the kernel.
+
+
+    zImage (make zImage): This is the old format for small kernels
+	(compressed, below 512KB). At boot, this image gets loaded low in memory
+	(the first 640KB of the RAM).
+
+	A zImage does not have this header and therefore the load address must
+	be provided somewhere else. Typically, this is done with a bootz
+	U-Boot command that takes the load address and the Device Tree
+	File address as paramaters:
+
+		bootz loadaddr - fdtaddr
+
+    bzImage (make bzImage) : The big zImage (this has nothing to do with bzip2),
+	was created while the kernel grew and handles bigger images
+	(compressed, over 512KB). The image gets loaded high in memory
+	(above 1MB RAM). As today’s kernels are way over 512KB, this is usually
+	the preferred way.
+
+    uImage: an image file that has a U-Boot wrapper
+	(installed by the mkimage utility) that includes the OS type and
+	loader information.
+
+	A uImage includes a U-Boot header which contains the load address that
+	the kernel should be loaded to. This seems nice at first, but then you
+	realize that this makes this entire kernel specific to that load address,
+	defeating the desire to have a kernel that can run
+	"everywhere" (well, at least as broadly as possible).
+
+A very common practice (e.g. the typical Linux kernel Makefile) is to use a
+zImage file. Since a zImage file is self-extracting (i.e. needs no external decompressors),
+the wrapper would indicate that this kernel is “not compressed” even though it actually is.
+
+===============================================================================
+
+Do a verbose kernel build and search for the files This approach can give some
+insight, will never get out of date, and will help you to easily find which
+part of the build system is doing what. Once you have a build configuration that
+generates one of the files, build with:
+
+make V=1 |& tee f.log
+
+Modify a comment on some C file to force a re-link (e.g. init/main.c is a good one)
+if you have already built previously. Now, inspect f.log and search for the images of interest.
+
+For example, on v4.19 we will conclude that:
+1 .
+init/main.c
+|
+| gcc -c
+|
+v
+init/.tmp_main.o
+|
+| CONFIG_MODVERSIONS stuff
+|
+v
+init/main.o
+|
+| ar T (thin archive)
+|
+v
+init/built-in.a
+|
+| ar T (thin archive)
+|
+v
+built-in.a
+|
+| ld
+|
+v
+vmlinux (regular ELF file)
+|
+| objcopy
+|
+v
+arch/x86/boot/compressed/vmlinux.bin
+|
+| GZIP
+|
+
+2 .
+arch/x86/boot/compressed/vmlinux.bin.gz
+|
+| .incbin
+|
+v
+arch/x86/boot/compressed/piggy.S
+|
+| gcc -c
+|
+v
+arch/x86/boot/compressed/piggy.o
+|
+| ld
+|
+v
+arch/x86/boot/compressed/vmlinux (regular ELF file with gzipped code)
+|
+| objcopy
+|
+v
+arch/x86/boot/vmlinux.bin
+|
+| arch/x86/boot/tools/build.c
+|
+v
+arch/x86/boot/bzImage
+
+Thin archives are mentioned at:
+	https://stackoverflow.com/questions/2157629/linking-static-libraries-to-other-static-libraries/27676016#27676016
+
+They are archives that just point other archives / objects instead of copying them.
+The kernel moved from incremental linking to thin archives in v4.9 as described at:
+
+	https://stackoverflow.com/questions/29391965/what-is-partial-linking-in-gnu-linker/53959624#53959624
+
+Full log interpretation When we start reading the verbose build logs from the back up, first we see:
+
+	ln -fsn ../../x86/boot/bzImage ./arch/x86_64/boot/bzImage
+
+so those two are just symlinked.
+Then we search a bit further for x86/boot/bzImage and find:
+
+arch/x86/boot/tools/build \
+arch/x86/boot/setup.bin \
+arch/x86/boot/vmlinux.bin \
+arch/x86/boot/zoffset.h \
+arch/x86/boot/bzImage
+
+arch/x86/boot/tools/build is an executable, so we run it, see the help message:
+
+Usage: build setup system zoffset.h image
+
+and grep to find the source:
+
+arch/x86/boot/tools/build.c
+
+So this tool must be generating arch/x86/boot/bzImage from arch/x86/boot/vmlinux.bin and other files TODO what is the point of build exactly?
+
+If we follow arch/x86/boot/vmlinux.bin we see that it is just an objcopy from arch/x86/boot/compressed/vmlinux:
+
+objcopy \
+-O binary \
+-R .note \
+-R .comment \
+-S arch/x86/boot/compressed/vmlinux \
+arch/x86/boot/vmlinux.bin
+
+and arch/x86/boot/compressed/vmlinux is just a regular ELF file:
+
+ld \
+-m elf_x86_64 \
+-z noreloc-overflow \
+-pie \
+--no-dynamic-linker \
+-T arch/x86/boot/compressed/vmlinux.lds \
+arch/x86/boot/compressed/head_64.o \
+arch/x86/boot/compressed/misc.o \
+arch/x86/boot/compressed/string.o \
+arch/x86/boot/compressed/cmdline.o \
+arch/x86/boot/compressed/error.o \
+arch/x86/boot/compressed/piggy.o \
+arch/x86/boot/compressed/cpuflags.o \
+arch/x86/boot/compressed/early_serial_console.o \
+arch/x86/boot/compressed/kaslr.o \
+arch/x86/boot/compressed/kaslr_64.o \
+arch/x86/boot/compressed/mem_encrypt.o \
+arch/x86/boot/compressed/pgtable_64.o \
+-o arch/x86/boot/compressed/vmlinux
+
+ls -hlSr says that piggy.o is by far the largest file, so we search for it, and it must come from:
+
+gcc \
+-Wp,-MD,arch/x86/boot/compressed/.piggy.o.d \
+-nostdinc \
+-Ilinux/arch/x86/include \
+-I./arch/x86/include/generated \
+-Ilinux/include \
+-I./include \
+-Ilinux/arch/x86/include/uapi \
+-I./arch/x86/include/generated/uapi \
+-Ilinux/include/uapi \
+-I./include/generated/uapi \
+-include linux/include/linux/kconfig.h \
+-D__KERNEL__ \
+-m64 \
+-O2 \
+-fno-strict-aliasing \
+-fPIE \
+-DDISABLE_BRANCH_PROFILING \
+-mcmodel=small \
+-mno-mmx \
+-mno-sse \
+-ffreestanding \
+-fno-stack-protector \
+-Wno-pointer-sign \
+-D__ASSEMBLY__ \
+-c \
+-o arch/x86/boot/compressed/.tmp_piggy.o \
+arch/x86/boot/compressed/piggy.S
+
+.tmp_ prefix explained below.
+
+arch/x86/boot/compressed/piggy.S contains:
+
+.incbin "arch/x86/boot/compressed/vmlinux.bin.gz"
+
+see also: https://stackoverflow.com/questions/4158900/embedding-resources-in-executable-using-gcc/36295692#36295692
+
+arch/x86/boot/compressed/vmlinux.bin.gz comes from:
+
+cat arch/x86/boot/compressed/vmlinux.bin arch/x86/boot/compressed/vmlinux.relocs | \
+gzip -n -f -9 > arch/x86/boot/compressed/vmlinux.bin.gz
+
+which comes from:
+
+objcopy  -R .comment -S vmlinux arch/x86/boot/compressed/vmlinux.bin
+
+which comes from:
+
+LD      vmlinux
+
+which does:
+
+ld \
+-m elf_x86_64 \
+-z max-page-size=0x200000 \
+--emit-relocs \
+--build-id \
+-o vmlinux \
+-T ./arch/x86/kernel/vmlinux.lds \
+--whole-archive \
+built-in.a \
+--no-whole-archive \
+--start-group \
+lib/lib.a \
+arch/x86/lib/lib.a \
+--end-group \
+.tmp_kallsyms2.o
+
+vmlinux is huge, but all shown objects are tiny according to ls -l, so I researched and learned about a new ar feature I didn't know about: thin archives.
+
+At:
+
+AR      built-in.a
+
+the build does:
+
+ar \
+rcsTPD \
+built-in.a \
+arch/x86/kernel/head_64.o \
+arch/x86/kernel/head64.o \
+arch/x86/kernel/ebda.o \
+arch/x86/kernel/platform-quirks.o \
+init/built-in.a \
+usr/built-in.a \
+arch/x86/built-in.a \
+kernel/built-in.a \
+certs/built-in.a \
+mm/built-in.a \
+fs/built-in.a \
+ipc/built-in.a \
+security/built-in.a \
+crypto/built-in.a \
+block/built-in.a \
+lib/built-in.a \
+arch/x86/lib/built-in.a \
+drivers/built-in.a \
+sound/built-in.a \
+firmware/built-in.a \
+arch/x86/pci/built-in.a \
+arch/x86/power/built-in.a \
+arch/x86/video/built-in.a \
+net/built-in.a \
+virt/built-in.a
+
+T specifies the thin archive.
+
+We can then see that all sub archives are also thin, e.g., since I modified init/main.c, we have:
+
+ar \
+rcSTPD \
+init/built-in.a \
+init/main.o \
+init/version.o \
+init/do_mounts.o \
+init/do_mounts_initrd.o \
+init/initramfs.o \
+init/calibrate.o \
+init/init_task.o
+
+
+
+Do a verbose kernel build and search for the files
+
+This approach can give some insight, will never get out of date, and will help you to easily find which part of the build system is doing what.
+
+Once you have a build configuration that generates one of the files, build with:
+
+make V=1 |& tee f.log
+
+Modify a comment on some C file to force a re-link (e.g. init/main.c is a good one) if you have already built previously.
+
+Now, inspect f.log and search for the images of interest.
+
+For example, on v4.19 we will conclude that:
+
+init/main.c
+|
+| gcc -c
+|
+v
+init/.tmp_main.o
+|
+| CONFIG_MODVERSIONS stuff
+|
+v
+init/main.o
+|
+| ar T (thin archive)
+|
+v
+init/built-in.a
+|
+| ar T (thin archive)
+|
+v
+built-in.a
+|
+| ld
+|
+v
+vmlinux (regular ELF file)
+|
+| objcopy
+|
+v
+arch/x86/boot/compressed/vmlinux.bin
+|
+| GZIP
+|
+v
+
+arch/x86/boot/compressed/vmlinux.bin.gz
+|
+| .incbin
+|
+v
+arch/x86/boot/compressed/piggy.S
+|
+| gcc -c
+|
+v
+arch/x86/boot/compressed/piggy.o
+|
+| ld
+|
+v
+arch/x86/boot/compressed/vmlinux (regular ELF file with gzipped code)
+|
+| objcopy
+|
+v
+arch/x86/boot/vmlinux.bin
+|
+| arch/x86/boot/tools/build.c
+|
+v
+arch/x86/boot/bzImage
+
+Thin archives are mentioned at: https://stackoverflow.com/questions/2157629/linking-static-libraries-to-other-static-libraries/27676016#27676016 They are archives that just point other archives / objects instead of copying them.
+
+The kernel moved from incremental linking to thin archives in v4.9 as described at: https://stackoverflow.com/questions/29391965/what-is-partial-linking-in-gnu-linker/53959624#53959624
+
+Full log interpretation
+
+When we start reading the verbose build logs from the back up, first we see:
+
+ln -fsn ../../x86/boot/bzImage ./arch/x86_64/boot/bzImage
+
+so those two are just symlinked.
+
+Then we search a bit further for x86/boot/bzImage and find:
+
+arch/x86/boot/tools/build \
+arch/x86/boot/setup.bin \
+arch/x86/boot/vmlinux.bin \
+arch/x86/boot/zoffset.h \
+arch/x86/boot/bzImage
+
+arch/x86/boot/tools/build is an executable, so we run it, see the help message:
+
+Usage: build setup system zoffset.h image
+
+and grep to find the source:
+
+arch/x86/boot/tools/build.c
+
+So this tool must be generating arch/x86/boot/bzImage from arch/x86/boot/vmlinux.bin and other files TODO what is the point of build exactly?
+
+If we follow arch/x86/boot/vmlinux.bin we see that it is just an objcopy from arch/x86/boot/compressed/vmlinux:
+
+objcopy \
+-O binary \
+-R .note \
+-R .comment \
+-S arch/x86/boot/compressed/vmlinux \
+arch/x86/boot/vmlinux.bin
+
+and arch/x86/boot/compressed/vmlinux is just a regular ELF file:
+
+ld \
+-m elf_x86_64 \
+-z noreloc-overflow \
+-pie \
+--no-dynamic-linker \
+-T arch/x86/boot/compressed/vmlinux.lds \
+arch/x86/boot/compressed/head_64.o \
+arch/x86/boot/compressed/misc.o \
+arch/x86/boot/compressed/string.o \
+arch/x86/boot/compressed/cmdline.o \
+arch/x86/boot/compressed/error.o \
+arch/x86/boot/compressed/piggy.o \
+arch/x86/boot/compressed/cpuflags.o \
+arch/x86/boot/compressed/early_serial_console.o \
+arch/x86/boot/compressed/kaslr.o \
+arch/x86/boot/compressed/kaslr_64.o \
+arch/x86/boot/compressed/mem_encrypt.o \
+arch/x86/boot/compressed/pgtable_64.o \
+-o arch/x86/boot/compressed/vmlinux
+
+ls -hlSr says that piggy.o is by far the largest file, so we search for it, and it must come from:
+
+gcc \
+-Wp,-MD,arch/x86/boot/compressed/.piggy.o.d \
+-nostdinc \
+-Ilinux/arch/x86/include \
+-I./arch/x86/include/generated \
+-Ilinux/include \
+-I./include \
+-Ilinux/arch/x86/include/uapi \
+-I./arch/x86/include/generated/uapi \
+-Ilinux/include/uapi \
+-I./include/generated/uapi \
+-include linux/include/linux/kconfig.h \
+-D__KERNEL__ \
+-m64 \
+-O2 \
+-fno-strict-aliasing \
+-fPIE \
+-DDISABLE_BRANCH_PROFILING \
+-mcmodel=small \
+-mno-mmx \
+-mno-sse \
+-ffreestanding \
+-fno-stack-protector \
+-Wno-pointer-sign \
+-D__ASSEMBLY__ \
+-c \
+-o arch/x86/boot/compressed/.tmp_piggy.o \
+arch/x86/boot/compressed/piggy.S
+
+.tmp_ prefix explained below.
+
+arch/x86/boot/compressed/piggy.S contains:
+
+.incbin "arch/x86/boot/compressed/vmlinux.bin.gz"
+
+see also: https://stackoverflow.com/questions/4158900/embedding-resources-in-executable-using-gcc/36295692#36295692
+
+arch/x86/boot/compressed/vmlinux.bin.gz comes from:
+
+cat arch/x86/boot/compressed/vmlinux.bin arch/x86/boot/compressed/vmlinux.relocs | \
+gzip -n -f -9 > arch/x86/boot/compressed/vmlinux.bin.gz
+
+which comes from:
+
+objcopy  -R .comment -S vmlinux arch/x86/boot/compressed/vmlinux.bin
+
+which comes from:
+
+LD      vmlinux
+
+which does:
+
+ld \
+-m elf_x86_64 \
+-z max-page-size=0x200000 \
+--emit-relocs \
+--build-id \
+-o vmlinux \
+-T ./arch/x86/kernel/vmlinux.lds \
+--whole-archive \
+built-in.a \
+--no-whole-archive \
+--start-group \
+lib/lib.a \
+arch/x86/lib/lib.a \
+--end-group \
+.tmp_kallsyms2.o
+
+vmlinux is huge, but all shown objects are tiny according to ls -l, so I researched and learned about a new ar feature I didn't know about: thin archives.
+
+At:
+
+AR      built-in.a
+
+the build does:
+
+ar \
+rcsTPD \
+built-in.a \
+arch/x86/kernel/head_64.o \
+arch/x86/kernel/head64.o \
+arch/x86/kernel/ebda.o \
+arch/x86/kernel/platform-quirks.o \
+init/built-in.a \
+usr/built-in.a \
+arch/x86/built-in.a \
+kernel/built-in.a \
+certs/built-in.a \
+mm/built-in.a \
+fs/built-in.a \
+ipc/built-in.a \
+security/built-in.a \
+crypto/built-in.a \
+block/built-in.a \
+lib/built-in.a \
+arch/x86/lib/built-in.a \
+drivers/built-in.a \
+sound/built-in.a \
+firmware/built-in.a \
+arch/x86/pci/built-in.a \
+arch/x86/power/built-in.a \
+arch/x86/video/built-in.a \
+net/built-in.a \
+virt/built-in.a
+
+T specifies the thin archive.
+
+We can then see that all sub archives are also thin, e.g., since I modified init/main.c, we have:
+
+ar \
+rcSTPD \
+init/built-in.a \
+init/main.o \
+init/version.o \
+init/do_mounts.o \
+init/do_mounts_initrd.o \
+init/initramfs.o \
+init/calibrate.o \
+init/init_task.o
+
+which finally comes from the C file through a command like:
+
+gcc \
+-Wp,-MD,init/.main.o.d \
+-c \
+-o \
+init/.tmp_main.o \
+/work/linux-kernel-module-cheat/submodules/linux/init/main.c
+
+I can't find the init/.tmp_main.o to init/main.o step on the logs which is a shame... with:
+
+git grep '\.tmp_'
+
+we see that likely comes from scripts Makefile.build and is linked to CONFIG_MODVERSIONS which I had enabled:
+
+ifndef CONFIG_MODVERSIONS
+cmd_cc_o_c = $(CC) $(c_flags) -c -o $@ $<
+
+else
+# When module versioning is enabled the following steps are executed:
+# o compile a .tmp_<file>.o from <file>.c
+# o if .tmp_<file>.o doesn't contain a __ksymtab version, i.e. does
+#   not export symbols, we just rename .tmp_<file>.o to <file>.o and
+#   are done.
+# o otherwise, we calculate symbol versions using the good old
+#   genksyms on the preprocessed source and postprocess them in a way
+#   that they are usable as a linker script
+# o generate <file>.o from .tmp_<file>.o using the linker to
+#   replace the unresolved symbols __crc_exported_symbol with
+#   the actual value of the checksum generated by genksyms
+
+cmd_cc_o_c = $(CC) $(c_flags) -c -o $(@D)/.tmp_$(@F) $<
+
+cmd_modversions_c =
+
+if $(OBJDUMP) -h $(@D)/.tmp_$(@F) | grep -q __ksymtab; then     \
+        $(call cmd_gensymtypes_c,$(KBUILD_SYMTYPES),$(@:.o=.symtypes))  \
+            > $(@D)/.tmp_$(@F:.o=.ver);                 \
+                                        \
+        $(LD) $(KBUILD_LDFLAGS) -r -o $@ $(@D)/.tmp_$(@F)       \
+            -T $(@D)/.tmp_$(@F:.o=.ver);                \
+        rm -f $(@D)/.tmp_$(@F) $(@D)/.tmp_$(@F:.o=.ver);        \
+    else                                    \
+        mv -f $(@D)/.tmp_$(@F) $@;                  \
+    fi;
+endif
+
+Analysis done with this config which contains CONFIG_KERNEL_GZIP=y.
+
+aarch64 arch/arm64/boot/Image
+
+Just an uncompressed objcopy from vmlinux:
+
+objcopy  -O binary -R .note -R .note.gnu.build-id -R .comment -S vmlinux arch/arm64/boot/Image
+
+vmlinux is obtained in basically the exact same way as for x86 though the thin archives.
+
+arch/arm/boot/zImage
+
+Very similar to X86 with a zipped vmlinux, but no magic build.c step. Call chain summary:
+
+objcopy -O binary -R .comment -S  arch/arm/boot/compressed/vmlinux arch/arm/boot/zImage
+
+ld \
+-EL \
+--defsym _kernel_bss_size=469592 \
+-p \
+--no-undefined \
+-X \
+-T arch/arm/boot/compressed/vmlinux.lds \
+arch/arm/boot/compressed/head.o \
+arch/arm/boot/compressed/piggy.o \
+arch/arm/boot/compressed/misc.o \
+arch/arm/boot/compressed/decompress.o \
+arch/arm/boot/compressed/string.o \
+arch/arm/boot/compressed/hyp-stub.o \
+arch/arm/boot/compressed/lib1funcs.o \
+arch/arm/boot/compressed/ashldi3.o \
+arch/arm/boot/compressed/bswapsdi2.o \
+-o arch/arm/boot/compressed/vmlinux
+
+gcc \
+-c \
+-o arch/arm/boot/compressed/piggy.o \
+linux/arch/arm/boot/compressed/piggy.S
+
+.incbin "arch/arm/boot/compressed/piggy_data"
+
+cat arch/arm/boot/compressed/../Image | gzip -n -f -9 > arch/arm/boot/compressed/piggy_data
+
+objcopy -O binary -R .comment -S  vmlinux arch/arm/boot/Image
+
+QEMU v4.0.0 can boot from bzImage but not vmlinux
+
+This is another important practical difference: https://superuser.com/questions/1451568/booting-an-uncompressed-kernel-in-qemu
