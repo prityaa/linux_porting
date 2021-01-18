@@ -1,0 +1,50 @@
+1
+-------------------------------------
+Remember that bootloaders, and bootsectors, are only 512 bytes in size. 
+If the bootloader, within that same 512 bytes, executed the kernel directly, it is called a Single Stage Bootloader.
+
+The problem with this, however, is that of its size. 
+There is so little room to do alot within those 512 bytes. 
+It will be very difficault to set up, load and execute 
+a 32 bit kernel within a 16 bit bootloader. 
+This does not include error handling code. 
+This includes code for: Loading and finding 32 bit kernel, executing kernel, and error handling. 
+Fitting all of this code within 512 bytes is impossible. 
+Because of this, Single stage bootloaders have to load and execute a 16 bit kernel.
+
+A Multi Stage Bootloader consists of a single 512 byte bootloader 
+(The Single Stage Loader), however it just loads and executes another loader - A Second Stage Bootloader.
+the Second Stage Bootloader is normally 16 bit, however it will include all of the code (listed in the previous section), and more.
+It will be able to load and execute a 32 bit Kernel.
+
+The reason this works is because the only 512 byte limitation is the bootloader. 
+As long as the bootloader loads all of the sectors for the Second Stage loader in good manner,
+the Second Stage Loader has no limitation in size. 
+This makes things much easier to set up for the Kernel.
+
+because first-boot loader initialize required MEMORY, 
+Hardware,and some external device so that time there is no limitation of MEMORY>>>
+
+2
+---------------------------------------
+For example, you might want to load your operating system from a filesystem. 
+Code to handle a filesystem might not fit in your first bootloader 
+but code to load a second bootloader does fit.
+You would put all your filesystem code in the second bootloader 
+where you have more flexibility and get your first bootloader to load it instead.
+
+3
+---------------------------------------
+1)This 512 byte is showing limitation of first sector of memory on booting time 
+and this is related to PC-desktop system.
+
+2)in Embedded systems another concept for multistage bootloader , 
+in this if there is NO-FLASH memory on board then we have to boot 
+from different devices to rootfile system ,kernel images may be on SD-card,
+USB-pendrive,on Network or another external device,in this condition,
+x-loader(first bootloader only sense where is the images and primary initialization 
+and up to 2-bootloader(u-boot) it will fetch images from different resources)
+
+
+4
+--------------------------------------
