@@ -666,4 +666,50 @@ https://linoxide.com/booting/boot-process-of-linux-in-detail/
 https://stackoverflow.com/questions/15548004/why-do-we-need-a-bootloader-in-an-embedded-device
 
 
+Omap
+------------------------------------------
+Let me explain it using OMAP platform as an example (just to provide some actual background rather than just theory or common knowledge). Take a look at some facts for starters:
+
+On OMAP-based platforms the first program being run after power-on is ROM code (which is similar to BIOS on PC).
+ROM code looks for bootloader (which must be a file named "MLO" and located on active first partition of MMC, which must be formatted as FAT12/16/32, -- but that's details)
+ROM code copies content of that "MLO" file to static RAM (because regular RAM is not initialized yet). Next picture shows SRAM memory layout for OMAP4460 SoC:
+SRAM memory layout on OMAP4460
+
+SRAM memory is limited (due to physical reasons), so we only have 48 KiB for bootloader. Usually regular bootloader (e.g. U-Boot) binary is bigger than that. So we need to create some additional bootloader, which will initialize regular RAM and copy regular bootloader from MMC to RAM, and then will jump to execute that regular bootloader. This additional bootloader is usually referred as first-stage bootloader (in two-stage bootloader scenario).
+So this first-stage bootloader is U-Boot SPL; and second-stage bootloader is regular U-Boot (or U-Boot proper). To be clear: SPL stands for Secondary Program Loader. Which means that ROM code is the first thing that loads (and executes) other program, and SPL is the second thing that loads (and executes) other program. So usually boot sequence is next: ROM code -> SPL -> u-boot -> kernel. And actually it's very similar to PC boot, which is: BIOS -> MBR -> GRUB -> kernel.
+
+UPDATE
+
+To make things absolutely clear, here is the table describing all stages of boot sequence (to clarify possible uncertainty in terminology used):
+
++--------+----------------+----------------+----------+
+| Boot   | Terminology #1 | Terminology #2 | Actual   |
+| stage  |                |                | program  |
+| number |                |                | name     |
++--------+----------------+----------------+----------+
+| 1      |  Primary       |  -             | ROM code |
+|        |  Program       |                |          |
+|        |  Loader        |                |          |
+|        |                |                |          |
+| 2      |  Secondary     |  1st stage     | u-boot   |
+|        |  Program       |  bootloader    | SPL      |
+|        |  Loader (SPL)  |                |          |
+|        |                |                |          |
+| 3      |  -             |  2nd stage     | u-boot   |
+|        |                |  bootloader    |          |
+|        |                |                |          |
+| 4      |  -             |  -             | kernel   |
+|        |                |                |          |
++--------+----------------+----------------+----------+
+So I'm just using bootloader as synonym for U-Boot, and Program Loader as common term for any program that loads other program.
+
+See also:
+
+[1] SPL (at Wikipedia)
+
+[2] TPL: SPL loading SPL - Denx
+
+[3] Bootloader (at OSDev Wiki)
+
+[4] Boot ROM vs Bootloader
 
